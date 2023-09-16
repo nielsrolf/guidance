@@ -18,8 +18,6 @@ class LlamaCpp(LLM):
     """ A HuggingFace transformers language model with Guidance support.
     """
 
-    cache = LLM._open_cache("_llama_cpp.diskcache")
-
     def __init__(self, model: str = "../ggml-model.q4_1.bin",
                  n_ctx: int = 2048,
                  n_batch: int = 8,
@@ -168,6 +166,7 @@ class LlamaCpp(LLM):
                     add_bos = self._tokenizer.bos_token
                     tokens = tokens[1:]
 
+        breakpoint()
         # Decode the string corresponding to a single suffix token.
         # Note that we need to decode after the start token for sentence-piece tokenizers so that white space is preserved
         if fragment:
@@ -175,8 +174,12 @@ class LlamaCpp(LLM):
                 return add_bos + self._tokenizer.decode(self._prefix_ids + tokens)[len(self._prefix_str):] + add_eos
             elif isinstance(tokens, torch.Tensor):
                 return add_bos + self._tokenizer.decode(self._prefix_ids + tokens[0].tolist())[len(self._prefix_str):] + add_eos
+            elif isinstance(tokens, np.ndarray):
+                return add_bos + self._tokenizer.decode(self._prefix_ids + tokens.tolist())[len(self._prefix_str):] + add_eos
             elif isinstance(tokens, tuple):
                 return add_bos + self._tokenizer.decode(self._prefix_ids + list(tokens))[len(self._prefix_str):] + add_eos
+            else:
+                raise ValueError("Unknown type for tokens: " + str(type(tokens)) + " " + str(tokens))
         else:
             return add_bos + self._tokenizer.decode(tokens, **kwargs) + add_eos
 
@@ -283,7 +286,7 @@ class LlamaCppSession(LLMSession):
             token_healing = self.llm.token_healing
 
         # generate the cache key
-        key = self._cache_key(locals())
+        key = self._gen_key(locals())
 
         # set the stop patterns
         if stop is not None:
