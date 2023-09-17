@@ -34,7 +34,7 @@ class LlamaCpp(LLM):
                  before_role: str = "<",
                  after_role: str = ">",
                  role_end: str = "",
-                 include_role_in_end: bool = False,
+                 include_role_in_end: bool = True,
                  before_role_end: str = "</",
                  after_role_end: str = ">",
                  caching=True, token_healing=False, acceleration=False,
@@ -128,11 +128,11 @@ class LlamaCpp(LLM):
     def end_of_text(self):
         return self._tokenizer.eos_token
 
-    def role_start(self, role):
+    def role_start(self, role, **ignored_kwargs):
         """ The starting role tag for chat models."""
         return self.before_role + role + self.after_role
 
-    def role_end(self, role):
+    def role_end(self, role, **ignored_kwargs):
         if self.include_role_in_end:
             return self.before_role_end + role + self.after_role_end
         else:
@@ -166,7 +166,6 @@ class LlamaCpp(LLM):
                     add_bos = self._tokenizer.bos_token
                     tokens = tokens[1:]
 
-        breakpoint()
         # Decode the string corresponding to a single suffix token.
         # Note that we need to decode after the start token for sentence-piece tokenizers so that white space is preserved
         if fragment:
@@ -275,9 +274,10 @@ class LlamaCppSession(LLMSession):
 
     async def __call__(self, prompt, stop=None, stop_regex=None, temperature=None, n=1, max_tokens=1000, logprobs=None,
                        top_p=1.0, echo=False, logit_bias=None, token_healing=None, pattern=None, stream=False,
-                       cache_seed=0, caching=None):
+                       cache_seed=0, caching=None, **ignored_kwargs):
         """ Generate a completion of the given prompt.
         """
+        logging.warning(f"Ignoring kwargs: {ignored_kwargs}")
 
         # fill in defaults
         if temperature is None:
@@ -376,7 +376,7 @@ class LlamaCppSession(LLMSession):
                                                        self.llm.model_obj.token_eos()))
 
             if stop_regex is not None:
-                stoppers.append(RegexStoppingCriteria(stop_regex, self.llm.decode, len(coded_prompt)))
+                stoppers.append(RegexStoppingCriteria(stop_regex, self.llm, len(coded_prompt)))
 
             # a streamer to handle potentially partial output
             streamer = LlamaCppStreamer(
@@ -623,13 +623,13 @@ class RegexLogitsProcessor():
 
 
 class RegexStoppingCriteria():
-    def __init__(self, stop_pattern, decode, prefix_length):
+    def __init__(self, stop_pattern, llm, prefix_length):
         if isinstance(stop_pattern, str):
             self.stop_patterns = [regex.compile(stop_pattern)]
         else:
             self.stop_patterns = [regex.compile(pattern) for pattern in stop_pattern]
         self.prefix_length = prefix_length
-        self.decode = decode
+        self.llm = llm
         self.current_strings = None
         self.current_length = 0
 
@@ -638,7 +638,7 @@ class RegexStoppingCriteria():
         # extend our current strings
         if self.current_strings is None:
             self.current_strings = ""
-        self.current_strings += self.decode(input_ids[self.current_length:])
+        self.current_strings += self.llm.decode(input_ids[self.current_length:])
 
         # trim off the prefix string so we don't look for stop matches in the prompt
         if self.current_length == 0:
