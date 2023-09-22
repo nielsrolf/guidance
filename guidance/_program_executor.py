@@ -150,7 +150,7 @@ class ProgramExecutor():
 
         # if we are after a break point then we return nothing
         # (note that this flag will be cleared once the loop is ended)
-        logging.info(f"visiting node {node.get_name()}, {node.content}")
+        # logging.info(f"visiting node {type(node)} {node.get_name()}, {node.text} ")
         if self.caught_stop_iteration:
             return ""
         

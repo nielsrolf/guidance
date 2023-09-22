@@ -278,6 +278,7 @@ class LlamaCppSession(LLMSession):
         """ Generate a completion of the given prompt.
         """
         logging.warning(f"Ignoring kwargs: {ignored_kwargs}")
+        import torch
 
         # fill in defaults
         if temperature is None:
@@ -287,6 +288,14 @@ class LlamaCppSession(LLMSession):
 
         # generate the cache key
         key = self._gen_key(locals())
+
+        # <debug>
+        # this also happens in transformers:
+        #  # generate the cache key
+        # cache_params = self._cache_params(locals().copy())
+        # llm_cache = self.llm.cache
+        # key = llm_cache.create_key(self.llm.llm_name, **cache_params)
+        # </debug>
 
         # set the stop patterns
         if stop is not None:
@@ -310,6 +319,8 @@ class LlamaCppSession(LLMSession):
             if self.llm.device is not None:
                 encoded = encoded.to(self.llm.device)
             input_ids = encoded["input_ids"]
+            
+
             # model_config = self.llm.settings
 
             # ensure that we are extending a common sequence batch (our token healing assumes this right now)
@@ -379,6 +390,7 @@ class LlamaCppSession(LLMSession):
                 stoppers.append(RegexStoppingCriteria(stop_regex, self.llm, len(coded_prompt)))
 
             # a streamer to handle potentially partial output
+            logging.info(f"YOLO {type(input_ids)} {input_ids.shape}")
             streamer = LlamaCppStreamer(
                 input_ids=input_ids,
                 stop_regex=stop_regex,
@@ -417,15 +429,22 @@ class LlamaCppSession(LLMSession):
                 generate_args["do_sample"] = True
 
             # if we are streaming then we need to run the inference process in a separate thread
-            if stream:
+            if stream and n == 1:
                 generate_args["stream"] = True
                 stream_generator = self.llm._generate_call(**generate_args)
                 streamer.set_streamer(stream_generator)
                 return self._stream_then_save(streamer, key)
-
             # if we are not streaming we still manually use the streamer for consistency
             else:
-                generated_sequence = self.llm._generate_call(**generate_args)
+                generated_sequence = None
+                for _ in range(n):
+                    new_choice = self.llm._generate_call(**generate_args)
+                    if generated_sequence is None:
+                        generated_sequence = new_choice
+                    else:
+                        # merge choices
+                        generated_sequence["choices"] += new_choice["choices"]
+                logging.info(f"YOLO {type(generated_sequence)} {generated_sequence} {n}")
                 streamer.put(generated_sequence)
                 self.llm.cache[key] = streamer.__next__()
                 self._update_prefix_cache(streamer)
