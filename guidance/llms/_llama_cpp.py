@@ -14,12 +14,32 @@ import logging
 
 from ._llm import LLM, LLMSession, SyncSession
 
+
+# import llama_cpp
+try:
+    import torch
+    if torch.cuda.is_available() and not torch.version.hip:
+        logging.info("cuda detected")
+        try:
+            from llama_cpp_cuda import Llama, llama_n_vocab
+            from llama_cpp_cuda import LogitsProcessorList, StoppingCriteriaList
+            logging.info("cuda llama_cpp_cuda imported")
+        except Exception as e:
+            logging.warning("cuda llama_cpp failed to import, falling back to cpu version")
+    else:
+        logging.info("cuda not detected")
+        from llama_cpp import Llama, llama_n_vocab
+        from llama_cpp import LogitsProcessorList, StoppingCriteriaList
+except Exception as e:
+    logging.warning(f"llama_cpp failed to import, some models will not be available {e}")
+
+
 class LlamaCpp(LLM):
     """ A HuggingFace transformers language model with Guidance support.
     """
 
     def __init__(self, model: str = "../ggml-model.q4_1.bin",
-                 n_ctx: int = 2048,
+                 n_ctx: int = 1024 * 16,
                  n_batch: int = 8,
                  n_threads: int = 4,
                  f16_kv: bool = True,
@@ -41,13 +61,12 @@ class LlamaCpp(LLM):
                  temperature=0.25):
         super().__init__()
 
-        try:
-            from llama_cpp import Llama, llama_n_vocab
-            import pkg_resources
-            from packaging import version
-            assert version.parse(pkg_resources.get_distribution("llama-cpp-python").version) >= version.parse("0.1.55"), "llama-cpp-python version must be >= 0.1.55"
-        except ImportError:
-            raise ImportError("llama_cpp >= 0.1.55 must be installed to use the LlamaCpp LLM in Gudiance! Install with `pip install llama-cpp-python`") 
+        # try:
+        #     import pkg_resources
+        #     from packaging import version
+        #     assert version.parse(pkg_resources.get_distribution("llama-cpp-python").version) >= version.parse("0.1.55"), "llama-cpp-python version must be >= 0.1.55"
+        # except ImportError:
+        #     raise ImportError("llama_cpp >= 0.1.55 must be installed to use the LlamaCpp LLM in Gudiance! Install with `pip install llama-cpp-python`") 
         from transformers import AutoTokenizer
         self.model_obj = Llama(
             model,
@@ -401,7 +420,6 @@ class LlamaCppSession(LLMSession):
                 logprobs=logprobs,
                 timeout=10
             )
-            from llama_cpp import LogitsProcessorList, StoppingCriteriaList
             if isinstance(prompt, bytes):
                 prompt = prompt.decode("utf-8")
             # the args for the transformers generate call
